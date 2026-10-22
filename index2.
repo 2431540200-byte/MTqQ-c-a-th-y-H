@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Multi-Client Broadcast • Private Lab Whiteboard</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--line:#334155;--text:#f8fafc;--muted:#94a3b8;--blue:#38bdf8;--green:#22c55e;--red:#ef4444;--purple:#a855f7;--amber:#f59e0b}
+*{box-sizing:border-box;margin:0;padding:0;font-family:Segoe UI,system-ui,sans-serif}
+body{background:var(--bg);color:var(--text);min-height:100vh}
+header{padding:16px 28px;background:#1e293be8;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;backdrop-filter:blur(8px)}
+h1{font-size:20px;color:var(--blue)} header p{font-size:13px;color:var(--muted);margin-top:4px}
+.nav{display:flex;gap:6px;overflow:auto;padding:10px 28px 0;border-bottom:1px solid var(--line)}
+.nav button{background:none;border:0;color:var(--muted);padding:12px 16px;cursor:pointer;font-weight:600;white-space:nowrap;border-bottom:3px solid transparent}
+.nav button.active{color:var(--blue);border-bottom-color:var(--blue)}
+main{max-width:1500px;margin:auto;padding:22px}
+.tab{display:none}.tab.active{display:block}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}.sidebar{display:grid;grid-template-columns:310px 1fr;gap:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:18px}
+.title{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;font-weight:700}
+.badge{padding:4px 8px;border-radius:5px;font-size:11px;font-weight:700}.blue{color:var(--blue);background:#38bdf81f}.green{color:var(--green);background:#22c55e1f}.red{color:var(--red);background:#ef44441f}.amber{color:var(--amber);background:#f59e0b1f}.purple{color:var(--purple);background:#a855f71f}
+.btn{border:0;border-radius:7px;background:var(--blue);color:#061018;padding:10px 13px;font-weight:700;cursor:pointer}.btn:hover{filter:brightness(1.08)}.btn.danger{background:var(--red);color:white}.btn.dark{background:#334155;color:white}.btn.green{background:var(--green);color:#052e16}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row>*{flex:1}
+input{width:100%;padding:10px;border:1px solid var(--line);border-radius:7px;background:#0b1220;color:white;outline:none}input:focus{border-color:var(--blue)}
+label{font-size:12px;color:var(--muted);display:block;margin-bottom:5px}
+.help{font-size:12px;color:var(--muted);line-height:1.6}
+canvas{display:block;max-width:100%}.anim{width:100%;height:180px;background:#090d16;border:1px solid var(--line);border-radius:8px}
+.board-wrap{background:#090d16;border:1px solid var(--line);border-radius:8px;padding:7px}
+#whiteboard{width:100%;height:auto;background:#fff;border-radius:5px;cursor:crosshair;touch-action:none}
+.colors{display:flex;gap:8px;margin:8px 0}.color{width:30px;height:30px;border-radius:50%;border:2px solid transparent;cursor:pointer}.color.active{border-color:white;transform:scale(1.1)}
+.clients{display:flex;flex-direction:column;gap:7px;max-height:210px;overflow:auto}.client{padding:9px;background:#0f172a;border:1px solid var(--line);border-radius:7px;font-size:12px;display:flex;justify-content:space-between}
+.log{height:145px;overflow:auto;background:#090d16;border:1px solid var(--line);padding:9px;border-radius:7px;font:11px monospace;color:var(--blue)}
+.log div{margin-bottom:5px;word-break:break-word}
+.step{padding:14px;background:#0f172a;border:1px solid var(--line);border-radius:8px;margin-top:10px;color:var(--muted);line-height:1.7}
+.modal{position:fixed;inset:0;background:#020617dd;display:flex;align-items:center;justify-content:center;padding:20px;z-index:100}.modal.hidden{display:none}
+.modal-box{width:min(500px,100%);background:#1e293b;border:1px solid var(--line);border-radius:15px;padding:24px;box-shadow:0 20px 70px #0008}
+.modal-box h2{margin-bottom:8px}.modal-box p{color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:18px}.field{margin-bottom:14px}
+#roomInfo{display:none}.room-chip{padding:10px;background:#0f172a;border:1px solid var(--line);border-radius:8px;margin-bottom:10px;font-size:12px;line-height:1.7}
+@media(max-width:950px){.grid2,.sidebar{grid-template-columns:1fr}main{padding:12px}.nav{padding-left:12px;padding-right:12px}header{padding:14px 16px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🌐 Chương 5 Lab — Multi-Client Broadcast & MQTT</h1>
+  <p>Whiteboard phân tán realtime • Phòng lab riêng bằng mã phòng + mật khẩu</p>
+</header>
+
+<nav class="nav">
+  <button class="active" onclick="switchTab('tab1',this)">1. Unicast / Broadcast / Multicast</button>
+  <button onclick="switchTab('tab2',this)">2. MQTT Pub/Sub</button>
+  <button onclick="switchTab('tab3',this)">3. Phòng Lab Whiteboard</button>
+  <button onclick="switchTab('tab4',this)">4. Wireshark</button>
+</nav>
+
+<main>
+<section id="tab1" class="tab active">
+  <div class="grid2">
+    <div class="card"><div class="title"><span>1. Unicast</span><span class="badge blue">1-to-1</span></div><canvas id="unicastCanvas" class="anim" width="420" height="180"></canvas><div class="step">Một nguồn gửi dữ liệu tới đúng một thiết bị đích. Ví dụ: HTTP/HTTPS, FTP.</div></div>
+    <div class="card"><div class="title"><span>2. Broadcast</span><span class="badge amber">1-to-All</span></div><canvas id="broadcastCanvas" class="anim" width="420" height="180"></canvas><div class="step">Một nguồn phát dữ liệu tới tất cả thiết bị trong phạm vi phù hợp. Ví dụ: ARP, DHCP Discover.</div></div>
+  </div>
+  <div class="card"><div class="title"><span>3. Multicast</span><span class="badge purple">1-to-Many Group</span></div><div class="grid2"><canvas id="multicastCanvas" class="anim" width="420" height="180"></canvas><div class="step">Nguồn gửi tới một nhóm thành viên đã tham gia. Ví dụ: IPTV, hội nghị truyền hình.</div></div></div>
+</section>
+
+<section id="tab2" class="tab">
+  <div class="card"><div class="title"><span>MQTT Publish / Subscribe</span><button class="btn" onclick="startMqttAnim()">Chạy lại</button></div><canvas id="mqttAnimCanvas" class="anim" width="900" height="260"></canvas><p id="mqttAnimText" style="text-align:center;color:var(--green);margin-top:10px;font-size:13px"></p></div>
+  <div class="grid2">
+    <div class="card"><div class="title">Kiến trúc Pub/Sub <span class="badge blue">Decoupled</span></div><div class="step"><b>Publisher</b> gửi message vào Topic.<br><b>Broker</b> nhận và định tuyến message.<br><b>Subscriber</b> đăng ký Topic và nhận message.</div></div>
+    <div class="card"><div class="title">MQTT over WebSockets <span class="badge green">Browser Friendly</span></div><div class="step">Trình duyệt có thể kết nối MQTT qua WebSocket bảo mật <b>wss://</b>. Ứng dụng này dùng Public MQTT Broker để minh họa cơ chế Broadcast realtime.</div></div>
+  </div>
+</section>
+
+<section id="tab3" class="tab">
+  <div id="roomInfo">
+    <div class="room-chip">
+      🔐 <b>Phòng:</b> <span id="roomNameView"></span> &nbsp;|&nbsp;
+      👤 <b>Bạn:</b> <span id="userNameView"></span> &nbsp;|&nbsp;
+      <span id="connStatus" class="badge amber">Đang kết nối...</span>
+      <div style="margin-top:5px">🔑 Mật khẩu đã dùng để xác thực phòng. <span style="color:var(--muted)">Không hiển thị lại trên màn hình.</span></div>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <aside>
+      <div class="card">
+        <div class="title"><span>Phòng Lab</span><span class="badge green">PRIVATE</span></div>
+        <div id="roomSummary" class="help">Chưa tham gia phòng.</div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn" onclick="showRoomModal(false)">Đổi phòng</button>
+          <button class="btn dark" onclick="leaveRoom()">Rời phòng</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="title"><span>Client Online</span><span id="clientCount" class="badge blue">0</span></div>
+        <div id="clientList" class="clients"></div>
+      </div>
+      <div class="card">
+        <div class="title">Công cụ vẽ</div>
+        <label>Màu nét</label>
+        <div class="colors">
+          <button class="color active" style="background:#0f172a" onclick="setColor('#0f172a',this)"></button>
+          <button class="color" style="background:#ef4444" onclick="setColor('#ef4444',this)"></button>
+          <button class="color" style="background:#22c55e" onclick="setColor('#22c55e',this)"></button>
+          <button class="color" style="background:#38bdf8" onclick="setColor('#38bdf8',this)"></button>
+          <button class="color" style="background:#a855f7" onclick="setColor('#a855f7',this)"></button>
+          <button class="color" style="background:#f59e0b" onclick="setColor('#f59e0b',this)"></button>
+        </div>
+        <label>Độ dày: <span id="sizeVal">4</span> px</label>
+        <input id="brushSize" type="range" min="1" max="30" value="4" oninput="sizeVal.textContent=this.value">
+        <div class="row" style="margin-top:12px">
+          <button class="btn" onclick="undoLocal()">↩ Undo</button>
+          <button class="btn dark" onclick="redoLocal()">↪ Redo</button>
+        </div>
+        <button class="btn danger" style="width:100%;margin-top:8px" onclick="clearBoard()">🗑 Xóa bảng chung</button>
+        <button class="btn green" style="width:100%;margin-top:8px" onclick="downloadBoard()">⬇ Tải ảnh PNG</button>
+      </div>
+      <div class="card"><div class="title">Nhật ký mạng</div><div id="netLogs" class="log"></div></div>
+    </aside>
+    <div class="card">
+      <div class="title"><span>🎨 Bảng Vẽ Phân Tán</span><span class="badge green">REALTIME</span></div>
+      <div class="board-wrap"><canvas id="whiteboard" width="1200" height="700"></canvas></div>
+      <p class="help" style="margin-top:10px">Mỗi nét vẽ được publish lên Topic riêng của phòng và broadcast tới các client đang tham gia phòng.</p>
+    </div>
+  </div>
+</section>
+
+<section id="tab4" class="tab">
+  <div class="card"><div class="title"><span>Phân tích gói tin MQTT bằng Wireshark</span><span class="badge green">Network Forensics</span></div>
+    <div class="step"><b>Bước 1:</b> mở Wireshark và lọc <code>tcp.port == 8884</code>.</div>
+    <div class="step"><b>Bước 2:</b> quan sát TCP 3-Way Handshake và TLS Handshake.</div>
+    <div class="step"><b>Bước 3:</b> trong trình duyệt nhấn F12 → Network → WS để xem WebSocket frames.</div>
+    <div class="step"><b>Bước 4:</b> vào phòng lab, vẽ một nét và quan sát message gửi/nhận realtime.</div>
+  </div>
+</section>
+</main>
+
+<div id="roomModal" class="modal">
+  <div class="modal-box">
+    <h2>🔐 Vào phòng Lab riêng</h2>
+    <p>Chỉ những người có <b>đúng mã phòng + mật khẩu</b> mới dùng cùng một kênh realtime. Bạn có thể đặt mã phòng, mật khẩu và tên hiển thị tùy ý.</p>
+    <div class="field"><label>Tên của bạn</label><input id="userName" placeholder="Ví dụ: Kiệt"></div>
+    <div class="field"><label>Mã phòng</label><input id="roomName" placeholder="Ví dụ: Lab mạng nhóm Kiệt"></div>
+    <div class="field"><label>Mật khẩu phòng</label><input id="roomPassword" type="password" placeholder="Nhập mật khẩu tùy ý"></div>
+    <div class="row">
+      <button class="btn" onclick="joinRoom()">🚀 Vào phòng</button>
+      <button class="btn dark" onclick="hideRoomModal()">Hủy</button>
+    </div>
+    <p style="margin-top:12px;margin-bottom:0;font-size:11px">Lưu ý: đây là mô hình client-side dùng Public MQTT Broker. Mật khẩu được dùng để tạo Topic riêng, không phải hệ thống xác thực máy chủ tuyệt đối.</p>
+  </div>
+</div>
+
+<script>
+const BROKER='wss://broker.hivemq.com:8884/mqtt';
+let mqttClient=null, roomTopic='', presenceTopic='', roomKey='';
+let myId='Client_'+Math.random().toString(36).slice(2,10);
+let userName='', roomName='', roomPassword='';
+let connected=false, painting=false, lastX=0,lastY=0,currentColor='#0f172a';
+let activeClients=new Map();
+let undoStack=[],redoStack=[];
+
+const canvas=document.getElementById('whiteboard'),ctx=canvas.getContext('2d');
+
+function logNet(msg){const box=document.getElementById('netLogs');const d=document.createElement('div');d.textContent='['+new Date().toLocaleTimeString()+'] '+msg;box.appendChild(d);box.scrollTop=box.scrollHeight}
+function switchTab(id,btn){document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active');btn.classList.add('active');if(id==='tab1')startAnimations();if(id==='tab2')startMqttAnim()}
+function showRoomModal(force){document.getElementById('roomModal').classList.remove('hidden');if(force){document.getElementById('roomName').focus()}}
+function hideRoomModal(){if(roomName)document.getElementById('roomModal').classList.add('hidden')}
+function cleanInput(v){return String(v??'')} // intentionally no length/character restriction
+async function sha256(text){const data=new TextEncoder().encode(text);const hash=await crypto.subtle.digest('SHA-256',data);return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('')}
+async function makeRoomKey(room,password){return sha256(room+'\\n'+password)}
+async function joinRoom(){
+  userName=cleanInput(document.getElementById('userName').value).trim()||'Khách';
+  roomName=cleanInput(document.getElementById('roomName').value);roomPassword=cleanInput(document.getElementById('roomPassword').value);
+  if(!roomName || !roomPassword){alert('Vui lòng nhập mã phòng và mật khẩu.');return}
+  roomKey=await makeRoomKey(roomName,roomPassword);
+  roomTopic='netprog/private-whiteboard/'+roomKey;
+  presenceTopic=roomTopic+'/presence';
+  if(mqttClient){try{mqttClient.end(true)}catch(e){}}
+  activeClients.clear();undoStack=[];redoStack=[];
+  document.getElementById('roomModal').classList.add('hidden');
+  document.getElementById('roomInfo').style.display='block';
+  document.getElementById('roomNameView').textContent=roomName;
+  document.getElementById('userNameView').textContent=userName;
+  document.getElementById('roomSummary').textContent='Phòng: '+roomName+' • Bạn: '+userName;
+  document.getElementById('connStatus').textContent='Đang kết nối...';
+  document.getElementById('connStatus').className='badge amber';
+  myId='Client_'+Math.random().toString(36).slice(2,10);
+  mqttClient=mqtt.connect(BROKER,{clientId:myId,clean:true,reconnectPeriod:3000,connectTimeout:10000});
+  mqttClient.on('connect',()=>{
+    connected=true;document.getElementById('connStatus').textContent='Đã kết nối';document.getElementById('connStatus').className='badge green';
+    mqttClient.subscribe([roomTopic,presenceTopic],err=>{if(err)logNet('Lỗi subscribe: '+err.message);else logNet('Đã vào phòng và subscribe Topic riêng.')});
+    publishPresence();requestSnapshot();
+    logNet('MQTT connected • Room key SHA-256.');
+  });
+  mqttClient.on('reconnect',()=>{connected=false;document.getElementById('connStatus').textContent='Đang kết nối lại';document.getElementById('connStatus').className='badge amber'});
+  mqttClient.on('error',e=>logNet('MQTT error: '+e.message));
+  mqttClient.on('close',()=>{connected=false;document.getElementById('connStatus').textContent='Mất kết nối';document.getElementById('connStatus').className='badge red'});
+  mqttClient.on('message',(topic,payload)=>handleMessage(topic,payload.toString()));
+}
+function publish(obj){if(mqttClient&&mqttClient.connected)mqttClient.publish(roomTopic,JSON.stringify(obj))}
+function publishPresence(){publish({type:'presence',sender:myId,name:userName})}
+function requestSnapshot(){publish({type:'snapshot-request',sender:myId})}
+function handleMessage(topic,raw){
+  let d;try{d=JSON.parse(raw)}catch{return}
+  if(topic===presenceTopic)return;
+  if(d.sender===myId)return;
+  if(d.type==='draw'){drawLine(d.x1,d.y1,d.x2,d.y2,d.color,d.size,false);return}
+  if(d.type==='clear'){ctx.clearRect(0,0,canvas.width,canvas.height);undoStack=[];redoStack=[];logNet(d.name+' đã xóa bảng.');return}
+  if(d.type==='presence'){activeClients.set(d.sender,{name:d.name||'Khách',last:Date.now()});updateClients();return}
+  if(d.type==='snapshot-request'){sendSnapshot(d.sender);return}
+  if(d.type==='snapshot' && d.target===myId){restoreSnapshot(d.image);return}
+}
+function sendSnapshot(target){
+  try{publish({type:'snapshot',target,image:canvas.toDataURL('image/png')})}catch(e){logNet('Không thể gửi snapshot.')}
+}
+function restoreSnapshot(data){const img=new Image();img.onload=()=>{ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0);logNet('Đã đồng bộ bảng vẽ hiện tại.')} ;img.src=data}
+function updateClients(){const box=document.getElementById('clientList');box.innerHTML='';const now=Date.now();activeClients.set(myId,{name:userName,last:now});for(const [id,c] of activeClients){const el=document.createElement('div');el.className='client';el.innerHTML='<span><b>'+escapeHtml(c.name)+'</b> <small>('+escapeHtml(id)+')</small></span><span class="badge green">'+(id===myId?'Bạn':'Online')+'</span>';box.appendChild(el)}document.getElementById('clientCount').textContent=activeClients.size}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+setInterval(()=>{const now=Date.now();let changed=false;for(const [id,c] of activeClients){if(id!==myId&&now-c.last>10000){activeClients.delete(id);changed=true}}if(changed)updateClients();if(connected)publishPresence()},4000);
+
+function pos(e){const r=canvas.getBoundingClientRect();const sx=canvas.width/r.width,sy=canvas.height/r.height;const p=e.touches?.[0]||e;return{x:(p.clientX-r.left)*sx,y:(p.clientY-r.top)*sy}}
+function startDraw(e){e.preventDefault();painting=true;const p=pos(e);lastX=p.x;lastY=p.y;saveHistory()}
+function moveDraw(e){if(!painting)return;e.preventDefault();const p=pos(e),size=Number(document.getElementById('brushSize').value);drawLine(lastX,lastY,p.x,p.y,currentColor,size,true);lastX=p.x;lastY=p.y}
+function endDraw(){painting=false}
+canvas.addEventListener('mousedown',startDraw);canvas.addEventListener('mousemove',moveDraw);canvas.addEventListener('mouseup',endDraw);canvas.addEventListener('mouseleave',endDraw);
+canvas.addEventListener('touchstart',startDraw,{passive:false});canvas.addEventListener('touchmove',moveDraw,{passive:false});canvas.addEventListener('touchend',endDraw);
+function drawLine(x1,y1,x2,y2,color,size,send){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.strokeStyle=color;ctx.lineWidth=Number(size);ctx.lineCap='round';ctx.stroke();if(send)publish({type:'draw',sender:myId,name:userName,x1,y1,x2,y2,color,size})}
+function saveHistory(){try{undoStack.push(canvas.toDataURL());if(undoStack.length>30)undoStack.shift();redoStack=[]}catch(e){}}
+function restoreData(data){const img=new Image();img.onload=()=>{ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0)};img.src=data}
+function undoLocal(){if(!undoStack.length)return;redoStack.push(canvas.toDataURL());restoreData(undoStack.pop())}
+function redoLocal(){if(!redoStack.length)return;undoStack.push(canvas.toDataURL());restoreData(redoStack.pop())}
+function setColor(c,el){currentColor=c;document.querySelectorAll('.color').forEach(x=>x.classList.remove('active'));el.classList.add('active')}
+function clearBoard(){saveHistory();ctx.clearRect(0,0,canvas.width,canvas.height);publish({type:'clear',sender:myId,name:userName});logNet('Bạn đã gửi lệnh xóa bảng chung.')}
+function downloadBoard(){const a=document.createElement('a');a.download='lab-whiteboard-'+new Date().toISOString().replace(/[:.]/g,'-')+'.png';a.href=canvas.toDataURL('image/png');a.click();logNet('Đã tải bảng vẽ xuống dạng PNG.')}
+function leaveRoom(){if(!roomName)return;if(mqttClient){try{mqttClient.end(true)}catch(e){}}connected=false;activeClients.clear();document.getElementById('clientList').innerHTML='';document.getElementById('clientCount').textContent='0';document.getElementById('roomInfo').style.display='none';document.getElementById('roomSummary').textContent='Chưa tham gia phòng.';roomName='';roomPassword='';roomKey='';roomTopic='';presenceTopic='';showRoomModal(true)}
+
+let uId,bId,mId,maId;
+function startAnimations(){startUnicastAnim();startBroadcastAnim();startMulticastAnim()}
+function startUnicastAnim(){const c=document.getElementById('unicastCanvas'),x=c.getContext('2d');let p=0;if(uId)cancelAnimationFrame(uId);function f(){x.clearRect(0,0,420,180);p=(p+2)%280;x.strokeStyle='#38bdf8';x.strokeRect(20,70,70,40);x.strokeRect(330,70,70,40);x.fillStyle='#f8fafc';x.fillText('Nguồn',40,95);x.fillText('Đích',350,95);x.strokeStyle='#334155';x.beginPath();x.moveTo(90,90);x.lineTo(330,90);x.stroke();x.fillStyle='#38bdf8';x.beginPath();x.arc(90+p,90,7,0,7);x.fill();uId=requestAnimationFrame(f)}f()}
+function startBroadcastAnim(){const c=document.getElementById('broadcastCanvas'),x=c.getContext('2d');let p=0;if(bId)cancelAnimationFrame(bId);function f(){x.clearRect(0,0,420,180);p=(p+3)%320;x.strokeStyle='#f59e0b';x.strokeRect(20,70,70,40);x.fillStyle='#f8fafc';x.fillText('Nguồn',40,95);[[330,20],[330,75],[330,130]].forEach(t=>{x.strokeStyle='#22c55e';x.strokeRect(t[0],t[1],70,30);x.fillText('Nhận',t[0]+23,t[1]+20)});x.strokeStyle='#f59e0b';x.beginPath();x.arc(55,90,p,0,7);x.stroke();bId=requestAnimationFrame(f)}f()}
+function startMulticastAnim(){const c=document.getElementById('multicastCanvas'),x=c.getContext('2d');let p=0;if(mId)cancelAnimationFrame(mId);function f(){x.clearRect(0,0,420,180);p=(p+2)%220;x.strokeStyle='#a855f7';x.strokeRect(20,70,70,40);x.fillStyle='#f8fafc';x.fillText('Nguồn',40,95);[[320,20,true],[320,75,false],[320,130,true]].forEach(t=>{x.strokeStyle=t[2]?'#22c55e':'#64748b';x.strokeRect(t[0],t[1],80,30);x.fillText(t[2]?'Thành viên':'Ngoài nhóm',t[0]+5,t[1]+20)});x.fillStyle='#a855f7';x.beginPath();x.arc(100+p,90,7,0,7);x.fill();mId=requestAnimationFrame(f)}f()}
+function startMqttAnim(){const c=document.getElementById('mqttAnimCanvas'),x=c.getContext('2d');let p=0;if(maId)cancelAnimationFrame(maId);function f(){x.clearRect(0,0,c.width,c.height);p=(p+2)%230;x.strokeStyle='#38bdf8';x.strokeRect(40,105,120,50);x.strokeStyle='#a855f7';x.strokeRect(390,90,120,80);x.strokeStyle='#22c55e';x.strokeRect(740,50,120,50);x.strokeRect(740,160,120,50);x.fillStyle='#f8fafc';x.font='bold 12px sans-serif';x.fillText('PUBLISHER',65,135);x.fillText('MQTT BROKER',405,135);x.fillText('CLIENT 1',770,80);x.fillText('CLIENT 2',770,190);x.fillStyle='#38bdf8';x.beginPath();x.arc(160+p,130,8,0,7);x.fill();maId=requestAnimationFrame(f)}f()} 
+
+window.onload=()=>{startAnimations();showRoomModal(true);updateClients()}
+</script>
+</body>
+</html>
