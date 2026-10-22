@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="vi">
-<head>  
+<head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Multi-Client Broadcast • Private Lab Whiteboard</title>
@@ -28,7 +28,7 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:5px}
 canvas{display:block;max-width:100%}.anim{width:100%;height:180px;background:#090d16;border:1px solid var(--line);border-radius:8px}
 .board-wrap{background:#090d16;border:1px solid var(--line);border-radius:8px;padding:7px}
 #whiteboard{width:100%;height:auto;background:#fff;border-radius:5px;cursor:crosshair;touch-action:none}
-.colors{display:flex;gap:8px;margin:8px 0}.color{width:30px;height:30px;border-radius:50%;border:2px solid transparent;cursor:pointer}.color.active{border-color:white;transform:scale(1.1)}
+.colors{display:flex;gap:8px;margin:8px 0;flex-wrap:wrap}.color{width:30px;height:30px;border-radius:50%;border:2px solid transparent;cursor:pointer}.color.active{border-color:white;transform:scale(1.1)}.custom-color{width:30px;height:30px;margin:0;display:block;cursor:pointer}.custom-color input{width:30px;height:30px;padding:0;border:2px solid #64748b;border-radius:50%;cursor:pointer;background:transparent}.tool-active{box-shadow:0 0 0 2px #fff inset;}
 .clients{display:flex;flex-direction:column;gap:7px;max-height:210px;overflow:auto}.client{padding:9px;background:#0f172a;border:1px solid var(--line);border-radius:7px;font-size:12px;display:flex;justify-content:space-between}
 .log{height:145px;overflow:auto;background:#090d16;border:1px solid var(--line);padding:9px;border-radius:7px;font:11px monospace;color:var(--blue)}
 .log div{margin-bottom:5px;word-break:break-word}
@@ -98,15 +98,24 @@ canvas{display:block;max-width:100%}.anim{width:100%;height:180px;background:#09
         <div class="title">Công cụ vẽ</div>
         <label>Màu nét</label>
         <div class="colors">
-          <button class="color active" style="background:#0f172a" onclick="setColor('#0f172a',this)"></button>
-          <button class="color" style="background:#ef4444" onclick="setColor('#ef4444',this)"></button>
-          <button class="color" style="background:#22c55e" onclick="setColor('#22c55e',this)"></button>
-          <button class="color" style="background:#38bdf8" onclick="setColor('#38bdf8',this)"></button>
-          <button class="color" style="background:#a855f7" onclick="setColor('#a855f7',this)"></button>
-          <button class="color" style="background:#f59e0b" onclick="setColor('#f59e0b',this)"></button>
+          <button class="color active" title="Đen" style="background:#0f172a" onclick="setColor('#0f172a',this)"></button>
+          <button class="color" title="Đỏ" style="background:#ef4444" onclick="setColor('#ef4444',this)"></button>
+          <button class="color" title="Xanh lá" style="background:#22c55e" onclick="setColor('#22c55e',this)"></button>
+          <button class="color" title="Xanh dương" style="background:#38bdf8" onclick="setColor('#38bdf8',this)"></button>
+          <button class="color" title="Tím" style="background:#a855f7" onclick="setColor('#a855f7',this)"></button>
+          <button class="color" title="Cam" style="background:#f59e0b" onclick="setColor('#f59e0b',this)"></button>
+          <button class="color" title="Hồng" style="background:#ec4899" onclick="setColor('#ec4899',this)"></button>
+          <button class="color" title="Nâu" style="background:#92400e" onclick="setColor('#92400e',this)"></button>
+          <label class="custom-color" title="Chọn màu bất kỳ">
+            <input id="customColor" type="color" value="#0f172a" onchange="setCustomColor(this.value)">
+          </label>
         </div>
-        <label>Độ dày: <span id="sizeVal">4</span> px</label>
-        <input id="brushSize" type="range" min="1" max="30" value="4" oninput="sizeVal.textContent=this.value">
+        <div class="row" style="margin-top:8px">
+          <button id="penBtn" class="btn" onclick="setTool('pen')">✏️ Bút</button>
+          <button id="eraserBtn" class="btn dark" onclick="setTool('eraser')">🧽 Tẩy</button>
+        </div>
+        <label style="margin-top:12px">Độ dày: <span id="sizeVal">4</span> px</label>
+        <input id="brushSize" type="range" min="1" max="50" value="4" oninput="sizeVal.textContent=this.value">
         <div class="row" style="margin-top:12px">
           <button class="btn" onclick="undoLocal()">↩ Undo</button>
           <button class="btn dark" onclick="redoLocal()">↪ Redo</button>
@@ -154,7 +163,7 @@ const BROKER='wss://broker.hivemq.com:8884/mqtt';
 let mqttClient=null, roomTopic='', presenceTopic='', roomKey='';
 let myId='Client_'+Math.random().toString(36).slice(2,10);
 let userName='', roomName='', roomPassword='';
-let connected=false, painting=false, lastX=0,lastY=0,currentColor='#0f172a';
+let connected=false, painting=false, lastX=0,lastY=0,currentColor='#0f172a',currentTool='pen';
 let activeClients=new Map();
 let undoStack=[],redoStack=[];
 
@@ -203,7 +212,7 @@ function handleMessage(topic,raw){
   let d;try{d=JSON.parse(raw)}catch{return}
   if(topic===presenceTopic)return;
   if(d.sender===myId)return;
-  if(d.type==='draw'){drawLine(d.x1,d.y1,d.x2,d.y2,d.color,d.size,false);return}
+  if(d.type==='draw'){drawLine(d.x1,d.y1,d.x2,d.y2,d.color||'#0f172a',d.size||4,false,d.tool||'pen');return}
   if(d.type==='clear'){ctx.clearRect(0,0,canvas.width,canvas.height);undoStack=[];redoStack=[];logNet(d.name+' đã xóa bảng.');return}
   if(d.type==='presence'){activeClients.set(d.sender,{name:d.name||'Khách',last:Date.now()});updateClients();return}
   if(d.type==='snapshot-request'){sendSnapshot(d.sender);return}
@@ -219,16 +228,43 @@ setInterval(()=>{const now=Date.now();let changed=false;for(const [id,c] of acti
 
 function pos(e){const r=canvas.getBoundingClientRect();const sx=canvas.width/r.width,sy=canvas.height/r.height;const p=e.touches?.[0]||e;return{x:(p.clientX-r.left)*sx,y:(p.clientY-r.top)*sy}}
 function startDraw(e){e.preventDefault();painting=true;const p=pos(e);lastX=p.x;lastY=p.y;saveHistory()}
-function moveDraw(e){if(!painting)return;e.preventDefault();const p=pos(e),size=Number(document.getElementById('brushSize').value);drawLine(lastX,lastY,p.x,p.y,currentColor,size,true);lastX=p.x;lastY=p.y}
+function moveDraw(e){if(!painting)return;e.preventDefault();const p=pos(e),size=Number(document.getElementById('brushSize').value);drawLine(lastX,lastY,p.x,p.y,currentColor,size,true,currentTool);lastX=p.x;lastY=p.y}
 function endDraw(){painting=false}
 canvas.addEventListener('mousedown',startDraw);canvas.addEventListener('mousemove',moveDraw);canvas.addEventListener('mouseup',endDraw);canvas.addEventListener('mouseleave',endDraw);
 canvas.addEventListener('touchstart',startDraw,{passive:false});canvas.addEventListener('touchmove',moveDraw,{passive:false});canvas.addEventListener('touchend',endDraw);
-function drawLine(x1,y1,x2,y2,color,size,send){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.strokeStyle=color;ctx.lineWidth=Number(size);ctx.lineCap='round';ctx.stroke();if(send)publish({type:'draw',sender:myId,name:userName,x1,y1,x2,y2,color,size})}
+function drawLine(x1,y1,x2,y2,color,size,send,tool='pen'){
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x1,y1);
+  ctx.lineTo(x2,y2);
+  ctx.lineWidth=Number(size);
+  ctx.lineCap='round';
+  ctx.lineJoin='round';
+  if(tool==='eraser'){
+    ctx.globalCompositeOperation='destination-out';
+    ctx.strokeStyle='rgba(0,0,0,1)';
+  }else{
+    ctx.globalCompositeOperation='source-over';
+    ctx.strokeStyle=color;
+  }
+  ctx.stroke();
+  ctx.restore();
+  if(send)publish({type:'draw',sender:myId,name:userName,x1,y1,x2,y2,color,size,tool});
+}
 function saveHistory(){try{undoStack.push(canvas.toDataURL());if(undoStack.length>30)undoStack.shift();redoStack=[]}catch(e){}}
 function restoreData(data){const img=new Image();img.onload=()=>{ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0)};img.src=data}
 function undoLocal(){if(!undoStack.length)return;redoStack.push(canvas.toDataURL());restoreData(undoStack.pop())}
 function redoLocal(){if(!redoStack.length)return;undoStack.push(canvas.toDataURL());restoreData(redoStack.pop())}
-function setColor(c,el){currentColor=c;document.querySelectorAll('.color').forEach(x=>x.classList.remove('active'));el.classList.add('active')}
+function setColor(c,el){currentColor=c;currentTool='pen';document.querySelectorAll('.color').forEach(x=>x.classList.remove('active'));if(el)el.classList.add('active');updateToolButtons()}
+function setCustomColor(c){currentColor=c;currentTool='pen';document.querySelectorAll('.color').forEach(x=>x.classList.remove('active'));updateToolButtons()}
+function setTool(tool){currentTool=tool;updateToolButtons();logNet(tool==='eraser'?'Đã chọn công cụ tẩy.':'Đã chọn công cụ bút.')}
+function updateToolButtons(){
+  const pen=document.getElementById('penBtn'),eraser=document.getElementById('eraserBtn');
+  if(!pen||!eraser)return;
+  pen.classList.toggle('tool-active',currentTool==='pen');
+  eraser.classList.toggle('tool-active',currentTool==='eraser');
+  canvas.style.cursor=currentTool==='eraser'?'cell':'crosshair';
+}
 function clearBoard(){saveHistory();ctx.clearRect(0,0,canvas.width,canvas.height);publish({type:'clear',sender:myId,name:userName});logNet('Bạn đã gửi lệnh xóa bảng chung.')}
 function downloadBoard(){const a=document.createElement('a');a.download='lab-whiteboard-'+new Date().toISOString().replace(/[:.]/g,'-')+'.png';a.href=canvas.toDataURL('image/png');a.click();logNet('Đã tải bảng vẽ xuống dạng PNG.')}
 function leaveRoom(){if(!roomName)return;if(mqttClient){try{mqttClient.end(true)}catch(e){}}connected=false;activeClients.clear();document.getElementById('clientList').innerHTML='';document.getElementById('clientCount').textContent='0';document.getElementById('roomInfo').style.display='none';document.getElementById('roomSummary').textContent='Chưa tham gia phòng.';roomName='';roomPassword='';roomKey='';roomTopic='';presenceTopic='';showRoomModal(true)}
@@ -240,7 +276,7 @@ function startBroadcastAnim(){const c=document.getElementById('broadcastCanvas')
 function startMulticastAnim(){const c=document.getElementById('multicastCanvas'),x=c.getContext('2d');let p=0;if(mId)cancelAnimationFrame(mId);function f(){x.clearRect(0,0,420,180);p=(p+2)%220;x.strokeStyle='#a855f7';x.strokeRect(20,70,70,40);x.fillStyle='#f8fafc';x.fillText('Nguồn',40,95);[[320,20,true],[320,75,false],[320,130,true]].forEach(t=>{x.strokeStyle=t[2]?'#22c55e':'#64748b';x.strokeRect(t[0],t[1],80,30);x.fillText(t[2]?'Thành viên':'Ngoài nhóm',t[0]+5,t[1]+20)});x.fillStyle='#a855f7';x.beginPath();x.arc(100+p,90,7,0,7);x.fill();mId=requestAnimationFrame(f)}f()}
 function startMqttAnim(){const c=document.getElementById('mqttAnimCanvas'),x=c.getContext('2d');let p=0;if(maId)cancelAnimationFrame(maId);function f(){x.clearRect(0,0,c.width,c.height);p=(p+2)%230;x.strokeStyle='#38bdf8';x.strokeRect(40,105,120,50);x.strokeStyle='#a855f7';x.strokeRect(390,90,120,80);x.strokeStyle='#22c55e';x.strokeRect(740,50,120,50);x.strokeRect(740,160,120,50);x.fillStyle='#f8fafc';x.font='bold 12px sans-serif';x.fillText('PUBLISHER',65,135);x.fillText('MQTT BROKER',405,135);x.fillText('CLIENT 1',770,80);x.fillText('CLIENT 2',770,190);x.fillStyle='#38bdf8';x.beginPath();x.arc(160+p,130,8,0,7);x.fill();maId=requestAnimationFrame(f)}f()} 
 
-window.onload=()=>{startAnimations();showRoomModal(true);updateClients()}
+window.onload=()=>{startAnimations();showRoomModal(true);updateClients();updateToolButtons()}
 </script>
 </body>
 </html>
